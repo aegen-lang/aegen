@@ -82,7 +82,7 @@ type FlatAST() =
     member val private Data = [||] with get, set
 
     override this.ToString (): string = 
-        sprintf "FlatAST: %A\n\n" this.Ast
+        sprintf "FlatAST:\n%s\n\n" (this.Ast |> Array.mapi (sprintf "[ %i ]: %A") |> String.concat "\n")
 
     member this.add(ast) =
         this.Ast <- [|ast|] |> Array.append this.Ast
@@ -95,7 +95,7 @@ type FlatAST() =
                 (fun ast ->
                     match run program ast.Data with
                     | Success(res, _, _) -> res
-                    | Failure(_, _, _) -> raise(FASTParseException("Failured to parse DATA"))
+                    | Failure(msg, _, _) -> failwith <| sprintf "FlatAST.Data ->! Failured Parse.\n%s" msg
                 )
 
     member this.getAst i =

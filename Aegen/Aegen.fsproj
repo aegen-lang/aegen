@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <Compile Include="compiler\FlatAST.fs" />
-    <None Include="compiler\src\grammar.pr" />
     <Compile Include="compiler\Parser.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

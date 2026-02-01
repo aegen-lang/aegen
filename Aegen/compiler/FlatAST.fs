@@ -95,7 +95,7 @@ type FlatAST() =
                 (fun ast ->
                     match run program ast.Data with
                     | Success(res, _, _) -> res
-                    | Failure(_, _, _) -> raise(FASTParseException("Failured to parse DATA"))
+                    | Failure(msg, _, _) -> failwith <| sprintf "FlatAST.Data ->! Failured Parse.\n%s" msg
                 )
 
     member this.getAst i =

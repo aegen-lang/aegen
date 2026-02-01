@@ -82,7 +82,7 @@ type FlatAST() =
     member val private Data = [||] with get, set
 
     override this.ToString (): string = 
-        sprintf "FlatAST:\n%s\n\n" (this.Ast |> Array.mapi (sprintf "[ %i ]: %A") |> String.concat "\n")
+        sprintf "FlatAST:\n%s\n\n" (this.Ast |> Array.mapi (sprintf "[ %i ]: %A\n") |> String.concat "\n")
 
     member this.add(ast) =
         this.Ast <- [|ast|] |> Array.append this.Ast

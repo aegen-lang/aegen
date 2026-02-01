@@ -8,7 +8,7 @@ package main
 import aegen::std::fmt
 
 func main() {
-    let a = 0
+    let ch = chan i32(3)
 }
 "
     p.run input |> printfn "%A"

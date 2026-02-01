@@ -8,6 +8,10 @@ type Node = string * int64 * int64 * string
 
 type Assoc = Associativity
 
+
+/// <summary>
+/// require type inference: "", -1
+/// </summary>
 type Parser() =
     let fast = FlatAST()
 
@@ -20,7 +24,61 @@ type Parser() =
     let funcTerm, funcTermRef = createParserForwardedToRef()
     let structTerm, structTermRef = createParserForwardedToRef()
     let protocolTerm, protocolTermRef = createParserForwardedToRef()
+    let typ, typRef = createParserForwardedToRef()
     
+    let typp =
+        choice [
+            attempt (
+                pipe2
+                    getPosition
+                    typ
+                    (fun pos t ->
+                        fast.add {
+                            Type = "type"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%s\"]" t
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (pstring "chan" .>> spaces >>. typ)
+                    (fun pos t ->
+                        fast.add {
+                            Type = "type_chan"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%s\"]" t
+                        }
+                    )
+            )
+            (
+                pipe2
+                    getPosition
+                    (
+                        pstring "func"
+                        >>. between
+                            (spaces .>> pchar '(')
+                            (spaces .>> pchar ')' .>> spaces)
+                            (sepBy (spaces >>. typ) (spaces .>> pchar ','))
+                        .>>. opt (attempt (typ .>> spaces))
+                    )
+                    (fun pos (arg, retyp) ->
+                        fast.add {
+                            Type = "type_func"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf
+                                "[arr: [%s], str: \"%s\"]"
+                                (arg |> List.map (sprintf "str: \"%s\"") |> String.concat ", ")
+                                (match retyp with | Some t -> t | None -> "")
+                        }
+                    )
+            )
+        ]
+
     let block p =
         between
             (spaces .>> pchar '{' .>> spaces)
@@ -39,189 +97,240 @@ type Parser() =
 
     let opp = OperatorPrecedenceParser()
 
-    let exprTerm = choice [
-        attempt (
+    let exprTerm =
+        choice [
+            attempt (
+                pipe2
+                    getPosition
+                    (pfloat .>> (pchar 'f' <|> pchar 'F'))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_float"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%f\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (pint32 .>> opt (attempt (pchar 'l')))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_int32"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (pint64 .>> attempt (pchar 'L'))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_int64"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (puint32 .>> pchar 'u')
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_uint32"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (puint64 .>> pstring "UL")
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_uint64"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (pint16 .>> pchar 's')
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_int16"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (puint16 .>> pstring "us")
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_uint16"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (pint8 .>> pchar 'y')
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_int8"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (puint8 .>> pstring "uy")
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_uint8"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (between (pchar '"') (pchar '"') (manyStrings (regex @"\\?.")))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_string"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%s\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (between (pchar '\'') (pchar '\'') (regex @"\\?."))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_char"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%s\"]" value
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (
+                        pstring "func"
+                        >>. between
+                            (spaces .>> pchar '(')
+                            (pchar ')' .>> spaces)
+                            (sepBy (spaces >>. ident) (spaces .>> pchar ','))
+                        .>>. opt (attempt (spaces >>. ident .>> spaces))
+                        .>>. block1
+                            funcTerm
+                    )
+                    (fun pos ((arg, rettyp), content) ->
+                        fast.add {
+                            Type = "operand_func"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf
+                                "[arr: [%s], str: \"%s\", arr: [%s]]"
+                                (arg |> List.map (sprintf "str: \"%s\"") |> String.concat ", ")
+                                (match rettyp with | Some typ -> typ | None -> "")
+                                (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                        }
+                    )
+
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (
+                        pstring "chan"
+                        .>> spaces1
+                        >>. ident
+                        .>>. between
+                            (spaces .>> pchar '(')
+                            (pchar ')')
+                            (spaces >>. getPosition .>>. opt (attempt opp.ExpressionParser .>> spaces))
+                    )
+                    (fun pos (typ, (pos2, cap)) ->
+                        fast.add {
+                            Type = "chan"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf
+                                "[str: \"%s\", ref: %i]"
+                                typ
+                                (
+                                    match cap with
+                                    | Some cap -> cap
+                                    | None ->
+                                        fast.add {
+                                            Type = "operand_int32"
+                                            Line = pos2.Line
+                                            Column = pos2.Column
+                                            Data = sprintf "[str: \"1\"]"
+                                        }
+                                )
+                        }
+                    )
+            )
+            attempt (
+                pipe2
+                    getPosition
+                    (between (pchar '(' .>> spaces) (spaces .>> pchar ')') opp.ExpressionParser)
+                    (fun pos expr ->
+                        fast.add {
+                            Type = "paren"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[ref: %i]" expr
+                        }
+                    )
+            )
             pipe2
                 getPosition
-                (pfloat .>> (pchar 'f' <|> pchar 'F'))
-                (fun pos value ->
+                (block1 funcTerm)
+                (fun pos content ->
                     fast.add {
-                        Type = "operand_float"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%f\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (pint32 .>> opt (attempt (pchar 'l')))
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_int32"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (pint64 .>> attempt (pchar 'L'))
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_int64"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (puint32 .>> pchar 'u')
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_uint32"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (puint64 .>> pstring "UL")
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_uint64"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (pint16 .>> pchar 's')
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_int16"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (puint16 .>> pstring "us")
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_uint16"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (pint8 .>> pchar 'y')
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_int8"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (puint8 .>> pstring "uy")
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_uint8"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%i\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (between (pchar '"') (pchar '"') (manyStrings (regex @"\\?.")))
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_string"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%s\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (between (pchar '\'') (pchar '\'') (regex @"\\?."))
-                (fun pos value ->
-                    fast.add {
-                        Type = "operand_char"
-                        Line = pos.Line
-                        Column = pos.Column
-                        Data = sprintf "[str: \"%s\"]" value
-                    }
-                )
-        )
-        attempt (
-            pipe2
-                getPosition
-                (
-                    pstring "func"
-                    >>. between
-                        (spaces .>> pchar '(')
-                        (pchar ')' .>> spaces)
-                        (sepBy (spaces >>. ident) (spaces .>> pchar ','))
-                    .>>. opt (attempt (spaces >>. ident .>> spaces))
-                    .>>. block1
-                        funcTerm
-                )
-                (fun pos ((arg, rettyp), content) ->
-                    fast.add {
-                        Type = "operand_func"
+                        Type = "block"
                         Line = pos.Line
                         Column = pos.Column
                         Data = sprintf
-                            "[arr: [%s], str: \"%s\", arr: [%s]]"
-                            (arg |> List.map (sprintf "str: \"%s\"") |> String.concat ", ")
-                            (match rettyp with | Some typ -> typ | None -> "")
+                            "[arr: [%s]]"
                             (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
                     }
                 )
-
-        )
-        pipe2
-            getPosition
-            (between (pchar '(' .>> spaces) (spaces .>> pchar ')') opp.ExpressionParser)
-            (fun pos expr ->
-                fast.add {
-                    Type = "paren"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf "[ref: %i]" expr
-                }
-            )
-    ]
+        ]
+        .>> spaces
     
     let func_base typ modi =
         pipe2
@@ -293,19 +402,25 @@ type Parser() =
             getPosition
             (pstring "let" .>> spaces1
                 >>. ident
+                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
                 .>> (spaces .>> pchar '=' .>> spaces)
                 .>>. blockOrExp
                     opp.ExpressionParser
                 .>> endLines
             )
-            (fun pos (name, content) ->
+            (fun pos ((name, t), content) ->
                 fast.add {
                     Type = "let"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[str: \"%s\", arr: [%s]]"
+                        "[str: \"%s\", ref: %i, arr: [%s]]"
                         name
+                        (
+                            match t with
+                            | Some t -> t
+                            | None -> -1
+                        )
                         (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
                 }
             )
@@ -314,20 +429,26 @@ type Parser() =
             getPosition
             (opt (attempt (stringReturn "pub" true .>> spaces1)) .>> pstring "val" .>> spaces1
                 .>>. ident
+                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
                 .>> (spaces .>> pchar '=' .>> spaces)
                 .>>. blockOrExp
                     opp.ExpressionParser
                 .>> endLines
             )
-            (fun pos ((isPub, name), content) ->
+            (fun pos (((isPub, name), t), content) ->
                 fast.add {
                     Type = "val_struct"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[bool: %b, str: \"%s\", arr: [%s]]"
+                        "[bool: %b, str: \"%s\", ref: %i, arr: [%s]]"
                         (match isPub with | Some v -> v | None -> false)
                         name
+                        (
+                            match t with
+                            | Some t -> t
+                            | None -> -1
+                        )
                         (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
                 }
             )
@@ -336,19 +457,25 @@ type Parser() =
             getPosition
             (opt (attempt (stringReturn "abs" true .>> spaces1)) .>> pstring "val" .>> spaces1
                 .>>. ident
+                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
                 .>> (spaces .>> pchar '=' .>> spaces)
                 .>>. blockOrExp
                     opp.ExpressionParser
             )
-            (fun pos ((isAbs, name), content) ->
+            (fun pos (((isAbs, name), t), content) ->
                 fast.add {
                     Type = "val_protocol"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[bool: %b, str: \"%s\", arr: [%s]]"
+                        "[bool: %b, str: \"%s\", ref: %i, arr: [%s]]"
                         (match isAbs with | Some v -> v | None -> false)
                         name
+                        (
+                            match t with
+                            | Some t -> t
+                            | None -> -1
+                        )
                         (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
                 }
             )
@@ -491,6 +618,20 @@ type Parser() =
                 }
             )
 
+        typRef.Value <-
+            choice [
+                attempt (
+                    pipe2
+                        ident
+                        (between
+                            (spaces .>> pchar '<')
+                            (pchar '>' .>> spaces)
+                            (sepBy1 (spaces >>. typ) (spaces .>> pchar ','))
+                        )
+                        (fun f s -> f + "<" + (String.concat "," s) + ">")
+                )
+                ident
+            ]
         funcTermRef.Value <- choice [
             attempt (func_ .>> funcEndLines)
             attempt (let_ .>> endLines)

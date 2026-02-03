@@ -31,7 +31,7 @@ type Parser() =
             attempt (
                 pipe2
                     getPosition
-                    (pstring "chan" .>> spaces >>. typ)
+                    (pstring "chan" .>> spaces1 >>. typ)
                     (fun pos t ->
                         fast.add {
                             Type = "type_chan"

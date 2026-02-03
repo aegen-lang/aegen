@@ -7,8 +7,8 @@ let main arv =
 package main
 import aegen::std::fmt
 
-func main() {
-    let ch = chan i32(3)
+func main(a: i32) {
+    let ch: func(i32, i32) = 1
 }
 "
     p.run input |> printfn "%A"

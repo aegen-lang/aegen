@@ -106,7 +106,18 @@ type Parser() =
                 .>>. between
                     (spaces .>> pchar '(')
                     (spaces .>> pchar ')')
-                    (sepBy (spaces >>. ident .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))) (spaces .>> pchar ','))
+                    (sepBy
+                        (
+                            choice [
+                                attempt (spaces >>. stringReturn "*" true .>> spaces)
+                                spaces >>% false
+                            ]
+                            .>>.
+                            ident
+                            .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
+                        )
+                        (spaces .>> pchar ',')
+                    )
                 .>>. opt (attempt (spaces >>. typp .>> spaces))
                 .>>. block1 funcTerm
                 .>> funcEndLines
@@ -121,7 +132,7 @@ type Parser() =
                         (match isMod with | Some v -> v | None -> false)
                         name
                         (match rettyp with | Some typ -> typ | None -> -1)
-                        (args |> List.map (fun (f, s) -> sprintf "str: \"%s\", ref: %i" f (match s with | Some i -> i | None -> -1)) |> String.concat ", ")
+                        (args |> List.map (fun ((isrepo, f), s) -> sprintf "bool: %b, str: \"%s\", ref: %i" isrepo f (match s with | Some i -> i | None -> -1)) |> String.concat ", ")
                         (content |> List.map (sprintf "ref: %i") |> String .concat ", ")
                 }
             )
@@ -166,21 +177,33 @@ type Parser() =
     let let_ =
         pipe2
             getPosition
-            (pstring "let" .>> spaces1
-                >>. ident
+            (pstring "let"
+                .>> spaces1
+                >>. choice [
+                    attempt (stringReturn "mut" true)
+                    pstring "" >>% false
+                ]
+                .>> spaces
+                .>>. choice [
+                    attempt (stringReturn "*" true .>> spaces)
+                    pstring "" >>% false
+                ]
+                .>>. ident
                 .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
                 .>> (spaces .>> pchar '=' .>> spaces)
                 .>>. blockOrExp
                     opp.ExpressionParser
                 .>> endLines
             )
-            (fun pos ((name, t), content) ->
+            (fun pos ((((ismut, isrepo), name), t), content) ->
                 fast.add {
                     Type = "let"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[str: \"%s\", ref: %i, arr: [%s]]"
+                        "[bool: %b, bool: %b, str: \"%s\", ref: %i, arr: [%s]]"
+                        ismut
+                        isrepo
                         name
                         (
                             match t with

@@ -46,23 +46,7 @@ type FlatAST() =
         >>. pint32
         .>> spaces
         |>> box
-    let arr_ =
-        pstring "arr"
-        .>> spaces
-        .>> pchar ':'
-        >>. between
-            (spaces .>> pchar '[' .>> spaces)
-            (spaces .>> pchar ']' .>> spaces)
-            (sepBy
-                (choice [
-                    attempt bool_
-                    attempt str_
-                    ref_
-                ])
-                (pchar ',' .>> spaces)
-            )
-        .>> spaces
-        |>> box
+    let arr_, arrRef = createParserForwardedToRef()
     let program =
         between
             (spaces .>> pchar '[' .>> spaces)
@@ -77,6 +61,26 @@ type FlatAST() =
                 (spaces .>> pchar ',' .>> spaces)
             )
         .>> eof
+
+    do
+        arrRef.Value <-
+            pstring "arr"
+            .>> spaces
+            .>> pchar ':'
+            >>. between
+                (spaces .>> pchar '[' .>> spaces)
+                (spaces .>> pchar ']' .>> spaces)
+                (sepBy
+                    (choice [
+                        attempt bool_
+                        attempt str_
+                        attempt ref_
+                        arr_
+                    ])
+                    (pchar ',' .>> spaces)
+                )
+            .>> spaces
+            |>> box
 
     member val private Ast = [||] with get, set
     member val private Data = [||] with get, set
